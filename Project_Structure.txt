@@ -1,0 +1,24 @@
+Groceries-AI-Agent/
+│── backend/               # Backend (FastAPI)
+│   ├── main.py            # FastAPI app
+│   ├── amazon_agent.py    # Amazon ordering agent
+│   ├── walmart_agent.py   # Walmart ordering agent
+│   ├── requirements.txt   # Backend dependencies
+│   ├── .env               # API keys & environment variables
+│   ├── models/            # (Optional) If you need schemas/models later
+│   └── utils/             # (Optional) Helper functions
+│
+│── frontend/              # Frontend (React + Material-UI)
+│   ├── src/               # React source code
+│   │   ├── App.jsx        # Main UI component
+│   │   ├── index.jsx      # React entry file
+│   │   ├── components/    # Reusable UI components
+│   │   ├── assets/        # Images & styles
+│   ├── package.json       # Frontend dependencies
+│   ├── vite.config.js     # Vite config file
+│   ├── public/            # Static assets
+│   └── .env               # Frontend environment variables (if needed)
+│
+│── README.md              # Project documentation
+│── .gitignore             # Ignore unnecessary files
+│── docker-compose.yml     # (Optional) If you want to containerize it later

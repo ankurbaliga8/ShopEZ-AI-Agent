@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+python-dotenv
+pydantic
+langchain_openai
+browser_use
+
+#to run the backend app: uvicorn main:app --reload
