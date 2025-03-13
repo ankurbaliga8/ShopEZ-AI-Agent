@@ -8,8 +8,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, SecretStr
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from amazon_agent import run_amazon_agent  # ✅ Import Amazon Agent
-from walmart_agent import run_walmart_agent  # ✅ Import Walmart Agent
+from amazon_agent import run_amazon_agent
+from walmart_agent import run_walmart_agent
 
 # Load environment variables
 load_dotenv()
@@ -33,44 +33,12 @@ llm = ChatOpenAI(model="gpt-4o", api_key=SecretStr(api_key))
 # Store user shopping lists & conversation history
 user_orders = {}  
 conversation_history = {}  
-running_agents = {}  # ✅ Tracks running agent tasks
+running_agents = {}  # Tracks running agent tasks
 
 
 class ChatRequest(BaseModel):
     message: str
     user_id: str  
-
-
-def update_shopping_list(existing_list, new_items):
-    """Correctly updates the shopping list by applying mathematical logic."""
-    
-    item_map = {item["name"]: item for item in existing_list}
-
-    for new_item in new_items:
-        item_name = new_item["name"]
-        quantity = new_item["quantity"]
-        operation = new_item.get("operation", "add")  
-
-        if item_name in item_map:
-            prev_quantity = item_map[item_name]["quantity"]
-
-            if operation == "remove":
-                new_quantity = max(0, prev_quantity - quantity)  
-                if new_quantity == 0:
-                    del item_map[item_name]  
-                else:
-                    item_map[item_name]["quantity"] = new_quantity
-
-            elif operation in ["make", "set", "change"]:
-                item_map[item_name]["quantity"] = quantity  
-
-            elif operation == "add":
-                item_map[item_name]["quantity"] = prev_quantity + quantity  
-
-        else:
-            item_map[item_name] = new_item  
-
-    return list(item_map.values())  
 
 
 @app.post("/chat")
@@ -82,6 +50,7 @@ async def chat_endpoint(request: ChatRequest):
     user_id = request.user_id
     user_message = request.message.strip().lower()
 
+    # Initialize user session if new
     if user_id not in user_orders:
         user_orders[user_id] = {"amazon_items": [], "grocery_items": []}
         conversation_history[user_id] = []
@@ -118,35 +87,31 @@ async def chat_endpoint(request: ChatRequest):
 
     # ✅ Handle Edge Cases (Invalid Inputs)
     if not re.search(r"[a-zA-Z0-9]", user_message) or len(user_message) < 3:
-        return JSONResponse(content={"response": "⚠️ Please enter valid shopping items. 🛒"})
+        return JSONResponse(content={"response": "⚠️ I didn't understand that. Please enter valid shopping items. 🛒"})
 
     # ✅ Construct Full Prompt with Past Conversations
     full_prompt = f"""
-    You are an AI shopping assistant. The user is building a shopping list over multiple interactions. 
-    Keep track of all past requests and updates.
+    You are an AI shopping assistant managing a user's shopping list.
 
-    ## **Current Shopping List**
+    **Current Shopping List**
     Amazon: {user_orders[user_id]["amazon_items"]}
     Grocery: {user_orders[user_id]["grocery_items"]}
 
-    ## **New User Request:** "{user_message}"
+    **User Request:** "{user_message}"
 
-    ### **Rules for Handling Items**
-    - If an item **does not exist**, add it with the given quantity.
-    - If an item **already exists**, apply these rules:
-      - **"Add X"** → Increase quantity.
-      - **"Remove X"** → Subtract quantity.
-      - **"Make X"** → Set exact quantity.
-      - **"Change X to Y"** → Change the quantity to Y.
-
-    ### **Expected JSON Output**
+    - If an item exists, update its quantity.
+    - If an item does not exist, add it.
+    - If the user says "remove X", remove that item.
+    - If the user says "make X Y", set X's quantity to Y.
+    
+    **Return a JSON response in this format:**
     ```json
     {{
       "amazon_items": [
-        {{"name": "item_name", "quantity": number, "operation": "add/remove/make/change"}}
+        {{"name": "item_name", "quantity": number}}
       ],
       "grocery_items": [
-        {{"name": "item_name", "quantity": number, "operation": "add/remove/make/change"}}
+        {{"name": "item_name", "quantity": number}}
       ],
       "response": "Natural language summary of the shopping list update."
     }}
@@ -162,19 +127,21 @@ async def chat_endpoint(request: ChatRequest):
 
         parsed = json.loads(json_match.group(1).strip())
 
-        user_orders[user_id]["amazon_items"] = update_shopping_list(
-            user_orders[user_id]["amazon_items"], parsed["amazon_items"]
-        )
-        user_orders[user_id]["grocery_items"] = update_shopping_list(
-            user_orders[user_id]["grocery_items"], parsed["grocery_items"]
-        )
+        # ✅ Fix: Directly Replace Backend List with Updated JSON
+        user_orders[user_id] = {
+            "amazon_items": parsed["amazon_items"],
+            "grocery_items": parsed["grocery_items"]
+        }
 
         conversation_history[user_id].append({"role": "assistant", "message": parsed["response"]})
 
         return JSONResponse(content={"response": parsed["response"] + " Type 'Proceed' to confirm order."})
 
+    except ValueError as ve:
+        return JSONResponse(content={"response": f"⚠️ Unable to process request: {str(ve)}"})
+
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"❌ Error processing request: {str(e)}"})
+        return JSONResponse(content={"response": "⚠️ Something went wrong. Please try again. 🛒"})
 
 
 async def process_order(user_id):
@@ -214,22 +181,23 @@ async def process_order(user_id):
 
 @app.post("/abort")
 async def abort():
-    """Forcefully stops all running agents and resets system state."""
+    """Stops all running agents and resets memory."""
+    
     global user_orders, conversation_history, running_agents
 
-    tasks_to_cancel = list(running_agents.values())  # Get all running tasks
-    running_agents.clear()  # Clear the agent tracking dictionary
+    # ✅ Cancel running tasks properly
+    tasks_to_cancel = list(running_agents.values())
+    running_agents.clear()
 
-    # 🚀 Cancel each running agent
     for task in tasks_to_cancel:
-        if not task.done():  # Only cancel tasks that are still running
+        if not task.done():
             task.cancel()
             try:
-                await task  # Ensure the task stops
+                await task
             except asyncio.CancelledError:
                 print("✅ Agent successfully aborted.")
 
-    # 🗑️ Clear user data (Orders + Chat history)
+    # ✅ Reset all stored data
     user_orders.clear()
     conversation_history.clear()
 
