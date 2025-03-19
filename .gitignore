@@ -23,3 +23,20 @@ backend/*.env
 *.njsproj
 *.sln
 *.sw?
+# Ignore Python virtual environment
+.venv/
+env/
+__pycache__/
+
+# Ignore VSCode settings
+.vscode/
+
+# Ignore OS system files
+.DS_Store
+
+# Ignore log files
+*.log
+
+# Ignore environment variables
+.env
+

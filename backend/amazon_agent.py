@@ -59,8 +59,8 @@ On Amazon.com, perform the following actions for each item:
 {item_instructions}
 
 ### Step 2: Checkout Process
-1. Click proceed to checkout.
-2. Use the credit card ending with **3585** for payment.
+1. Click 'go to card' to checkout.
+2. Use the second credit card for payment.
 3. Select **free delivery** if available, otherwise choose the cheaper option.
 4. **Place order** and confirm completion.
 """
