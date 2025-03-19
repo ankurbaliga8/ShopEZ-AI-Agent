@@ -52,7 +52,7 @@ pip install -r requirements.txt
 
 ### **4️⃣ Set Up Environment Variables**
 
-## Create a .env file and add your API key:
+### Create a .env file and add your API key:
 
 ```sh
 OPENAI_API_KEY=your_api_key_here
