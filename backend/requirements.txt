@@ -4,5 +4,6 @@ python-dotenv
 pydantic
 langchain_openai
 browser_use
+playwright
 
 #to run the backend app: uvicorn main:app --reload
