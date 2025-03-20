@@ -19,7 +19,7 @@ ShopEZ AI Agent is an **open-source** AI-powered automation tool that **autonomo
 ## 🏗️ Tech Stack
 
 🔹 **Backend:** FastAPI, LangChain, GPT-4o, Python (3.11 or greater)  
-🔹 **Frontend:** React, Material UI  
+🔹 **Frontend:** React, TailwindCSS, Material UI  
 🔹 **Automation:** Playwright, Browser Use (open-source)  
 🔹 **Deployment:** Docker, GitHub Actions
 
