@@ -73,7 +73,13 @@ function App() {
     ]);
 
     try {
-      await fetch(ABORT_URL, { method: "POST" });
+      await fetch(ABORT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: "123", // Using the same user_id as in sendMessage
+        }),
+      });
     } catch (error) {
       console.error("Failed to abort order:", error);
     }

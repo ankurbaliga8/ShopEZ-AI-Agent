@@ -7,3 +7,4 @@ browser_use
 playwright
 
 #to run the backend app: uvicorn main:app --reload
+# activate venv from main directory: source .venv/bin/activate

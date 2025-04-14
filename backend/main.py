@@ -2,20 +2,24 @@ import os
 import json
 import asyncio
 import re
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, SecretStr
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from amazon_agent import run_amazon_agent
-from walmart_agent import run_walmart_agent
+from amazon_agent import run_amazon_agent, browser as amazon_browser
+from walmart_agent import run_walmart_agent, browser as walmart_browser
 
 # Load environment variables
 load_dotenv()
 
 # Initialize FastAPI
 app = FastAPI()
+
+# Global variables
+running_agents = {}
+browser_instances = {}
 
 # CORS Middleware
 app.add_middleware(
@@ -33,7 +37,6 @@ llm = ChatOpenAI(model="gpt-4o", api_key=SecretStr(api_key))
 # Store user shopping lists & conversation history
 user_orders = {}  
 conversation_history = {}  
-running_agents = {}  # Tracks running agent tasks
 
 
 class ChatRequest(BaseModel):
@@ -166,13 +169,54 @@ async def process_order(user_id):
 
     async def execute_agents():
         """Executes agents in sequence, first the primary, then the secondary."""
-        if primary_items:
-            await primary_agent(primary_items)
-            print(f"✅ {primary_name} agent completed.")
+        try:
+            if primary_items:
+                # Store browser reference for this user
+                if primary_name.lower() == "amazon":
+                    browser_instances[user_id] = amazon_browser
+                else:
+                    browser_instances[user_id] = walmart_browser
+                    
+                await primary_agent(primary_items)
+                print(f"✅ {primary_name} agent completed.")
 
-        if secondary_items:
-            await secondary_agent(secondary_items)
-            print(f"✅ {secondary_name} agent completed.")
+            if secondary_items:
+                # Update browser reference for secondary agent
+                if secondary_name.lower() == "amazon":
+                    browser_instances[user_id] = amazon_browser
+                else:
+                    browser_instances[user_id] = walmart_browser
+                    
+                await secondary_agent(secondary_items)
+                print(f"✅ {secondary_name} agent completed.")
+        except asyncio.CancelledError:
+            print(f"🛑 Task for user {user_id} was cancelled.")
+            raise
+        finally:
+            # Clean up when done
+            if user_id in browser_instances:
+                try:
+                    # Close the browser
+                    await browser_instances[user_id].close()
+                    print(f"✅ Browser for user {user_id} closed automatically after completion.")
+                    
+                    # Force close Chrome as a backup measure
+                    import subprocess
+                    import platform
+                    
+                    system = platform.system()
+                    if system == "Darwin":  # macOS
+                        subprocess.run(["pkill", "-f", "Google Chrome"], check=False)
+                    elif system == "Windows":
+                        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], check=False)
+                    elif system == "Linux":
+                        subprocess.run(["pkill", "-f", "chrome"], check=False)
+                        
+                    print(f"🔥 Forcefully terminated Chrome browser processes.")
+                except Exception as e:
+                    print(f"Error closing browser after completion: {e}")
+                finally:
+                    del browser_instances[user_id]
 
     running_agents[user_id] = asyncio.create_task(execute_agents())
 
@@ -180,28 +224,65 @@ async def process_order(user_id):
 
 
 @app.post("/abort")
-async def abort():
-    """Stops all running agents and resets memory."""
+async def abort(request: dict = Body(...)):
+    """Stops running agent for a specific user and resets their memory."""
     
     global user_orders, conversation_history, running_agents
-
-    # ✅ Cancel running tasks properly
-    tasks_to_cancel = list(running_agents.values())
-    running_agents.clear()
-
-    for task in tasks_to_cancel:
+    user_id = request.get("user_id", "")
+    
+    # Check if there's a running agent for this user
+    if user_id in running_agents:
+        # Get the task for this specific user
+        task = running_agents[user_id]
+        
+        # Remove from running_agents dictionary
+        del running_agents[user_id]
+        
+        # Try to close the browser first if it exists
+        if user_id in browser_instances:
+            try:
+                # Close the browser
+                browser = browser_instances[user_id]
+                await browser.close()
+                print(f"✅ Browser for user {user_id} closed successfully.")
+                
+                # Force close Chrome as a backup measure
+                import subprocess
+                import platform
+                
+                system = platform.system()
+                if system == "Darwin":  # macOS
+                    subprocess.run(["pkill", "-f", "Google Chrome"], check=False)
+                elif system == "Windows":
+                    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], check=False)
+                elif system == "Linux":
+                    subprocess.run(["pkill", "-f", "chrome"], check=False)
+                    
+                print(f"🔥 Forcefully terminated Chrome browser processes.")
+                
+                del browser_instances[user_id]
+            except Exception as e:
+                print(f"Error closing browser: {e}")
+        
+        # Cancel the task if it's not done
         if not task.done():
             task.cancel()
             try:
                 await task
             except asyncio.CancelledError:
-                print("✅ Agent successfully aborted.")
-
-    # ✅ Reset all stored data
-    user_orders.clear()
-    conversation_history.clear()
-
-    return JSONResponse(content={"response": "🚨 Order aborted. Welcome back! 🛍️"})
+                print(f"✅ Agent for user {user_id} successfully aborted.")
+            except Exception as e:
+                print(f"Error while aborting agent: {e}")
+        
+        # Clear user specific data
+        if user_id in user_orders:
+            del user_orders[user_id]
+        if user_id in conversation_history:
+            del conversation_history[user_id]
+            
+        return JSONResponse(content={"response": "🚨 Order aborted. Welcome back! 🛍️"})
+    else:
+        return JSONResponse(content={"response": "No active orders to abort."})
 
 if __name__ == "__main__":
     import uvicorn
